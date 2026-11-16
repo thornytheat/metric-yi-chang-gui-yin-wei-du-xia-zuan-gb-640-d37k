@@ -4,7 +4,7 @@ from __future__ import annotations
 
 def build(run: dict, detection: dict, attribution: dict, reconcile: dict) -> dict:
     summary = run["summary"]
-    accounts = summary.get("accounts", {})
+    accounts = reconcile.get("accounts") or summary.get("accounts", {})
     return {
         "run": {
             "run_id": run["run_id"],
@@ -34,5 +34,6 @@ def build(run: dict, detection: dict, attribution: dict, reconcile: dict) -> dic
             "identity_ok": attribution.get("identity_ok", False),
         },
         "reason_counts": summary.get("reason_counts", []),
+        "adjudication": reconcile.get("adjudication", {}),
         "reconcile_ok": reconcile.get("identity_ok", False),
     }

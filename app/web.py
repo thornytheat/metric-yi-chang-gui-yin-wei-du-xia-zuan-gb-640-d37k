@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from app import config, reasons
 from app.modules.m2_calendar import contract
 from app.modules.m3_quality import service as quality_service
+from app.modules.m3_quality import adjudication_service
 from app.modules.m4_detect import service as detect_service
 from app.modules.m5_attrib import batches, service as attrib_service
 from app.modules.m6_export import service as export_service
@@ -27,6 +28,7 @@ templates = Jinja2Templates(directory=TEMPLATE_DIR)
 
 NAV = (
     ("/", "接入", "index"),
+    ("/conflicts", "裁定", "conflicts"),
     ("/anomalies", "异常", "anomalies"),
     ("/review", "复盘", "review"),
     ("/attribution", "分解", "attribution"),
@@ -238,13 +240,34 @@ def page_index(request: Request):
         points = attrib_service.load_view(app_state.store, run["run_id"])
         detection = detect_service.detect(points, app_state.settings)["summary"]
     history = batches.history(runs, 8)
+    extra = {}
+    if run is not None:
+        effective = adjudication_service.accounts_view(app_state.store, run)
+        extra["accounts"] = effective
+        extra["checks"] = quality_service.account_checks(effective)
+        extra["adjudication"] = adjudication_service.groups_payload(
+            app_state.store, run)["revenue"]
     return _page(request, "index.html", "index", axis_kind="run",
                  axis=axis_for_runs(history, summary_watermark(run), grid_days(run)),
-                 samples=samples, runs=history, detection=detection)
+                 samples=samples, runs=history, detection=detection, **extra)
 
 
 def summary_watermark(run: dict | None) -> str:
     return ((run or {}).get("summary", {}) or {}).get("watermark", "")
+
+
+@pages.get("/conflicts", response_class=HTMLResponse)
+def page_conflicts(request: Request, run_id: str = Query(default="")):
+    app_state = state(request)
+    run = app_state.store.get_run(run_id) if run_id else app_state.current_run()
+    if run is None:
+        return _page(request, "conflicts.html", "conflicts", axis_kind="date",
+                     axis=axis_for_dates([], ""), conflicts={})
+    payload = adjudication_service.groups_payload(app_state.store, run)
+    return _page(request, "conflicts.html", "conflicts", axis_kind="date",
+                 axis=axis_for_dates(grid_days(run), summary_watermark(run)),
+                 conflicts=payload, run=run,
+                 accounts=adjudication_service.accounts_view(app_state.store, run))
 
 
 @pages.get("/anomalies", response_class=HTMLResponse)
@@ -313,11 +336,11 @@ def page_batches(request: Request):
     if run is not None:
         reconcile = attrib_service.reconcile(app_state.settings, app_state.store, run["run_id"])
     history = batches.history(runs, 20)
+    accounts = reconcile.get("accounts") or (run or {}).get("summary", {}).get("accounts", {})
     return _page(request, "batches.html", "batches", axis_kind="run",
                  axis=axis_for_runs(history, summary_watermark(run), grid_days(run)),
-                 runs=history, reconcile=reconcile,
-                 account_notes=quality_service.account_checks(
-                     (run or {}).get("summary", {}).get("accounts", {})))
+                 runs=history, reconcile=reconcile, accounts=accounts,
+                 account_notes=quality_service.account_checks(accounts))
 
 
 @pages.get("/report", response_class=HTMLResponse)

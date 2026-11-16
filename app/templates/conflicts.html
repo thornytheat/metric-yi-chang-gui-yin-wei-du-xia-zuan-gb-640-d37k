@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}冲突裁定{% endblock %}
+{% block content %}
+{% if conflicts and conflicts.groups is defined %}
+<section class="grid-metrics">
+  <div class="metric"><div class="k">冲突组</div><div class="v">{{ conflicts.total }}</div></div>
+  <div class="metric"><div class="k">已裁定采信</div><div class="v">{{ conflicts.adopted }}</div></div>
+  <div class="metric"><div class="k">整组隔离</div><div class="v">{{ conflicts.isolated }}</div></div>
+  <div class="metric"><div class="k">原报采信点</div><div class="v">{{ conflicts.revenue.reported_points|int }}</div></div>
+  <div class="metric"><div class="k">裁定采信点</div><div class="v">{{ conflicts.revenue.adjudicated_points|int }}</div></div>
+  <div class="metric"><div class="k">裁定采信收入</div><div class="v">{{ conflicts.revenue.adjudicated|money }}</div></div>
+</section>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>收入拆分<span class="meta">原报 + 裁定 = 有效点合计</span></h2>
+    <div class="body">
+      <dl class="kv">
+        <dt>原报采信</dt><dd>{{ conflicts.revenue.reported|money }}</dd>
+        <dt>裁定采信</dt><dd>{{ conflicts.revenue.adjudicated|money }}</dd>
+        <dt>有效点合计</dt><dd>{{ conflicts.revenue.total|money }}</dd>
+        <dt>隔离行（未改写）</dt><dd>{{ accounts.rows_quarantine|default(0)|int }}</dd>
+        <dt>有效点 / 隔离点</dt><dd>{{ accounts.points_valid|default(0)|int }} / {{ accounts.points_rejected|default(0)|int }}</dd>
+      </dl>
+      <p class="hint">裁定采信的快照参与收入与异常计算，但原始冲突行与 <code>Q_DUP_CONFLICT</code> 原因码保持不变，审计可逐条对照。</p>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>对账<span class="meta">{{ "平" if checks and checks|selectattr("ok")|list|length == checks|length else "不平" }}</span></h2>
+    <div class="body tight">
+      <table>
+        <thead><tr><th class="static">账目</th><th class="static">规则</th><th class="num static">左</th><th class="num static">右</th><th class="static">结论</th></tr></thead>
+        <tbody>
+        {% for item in checks %}
+          <tr><td>{{ item.name }}</td><td class="hint">{{ item.formula }}</td>
+            <td class="num">{{ item.left|int }}</td><td class="num">{{ item.right|int }}</td>
+            <td><span class="tag {{ 'pass' if item.ok else 'confirmed' }}">{{ "平" if item.ok else "不平" }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>冲突组清单<span class="meta">{{ conflicts.total }} 组 · 点一行看证据</span></h2>
+    <div class="body tight scroll">
+      <table id="conflict-table">
+        <thead><tr><th class="static">组</th><th class="static">门店/渠道</th><th class="static">业务日</th>
+          <th class="num static">候选</th><th class="num static">版本</th><th class="static">状态</th></tr></thead>
+        <tbody>
+        {% for group in conflicts.groups %}
+          <tr data-group="{{ group.group_id }}" class="conflict-row" tabindex="0">
+            <td class="mono truncate" title="{{ group.group_id }}">{{ group.group_id.split('|', 1)[1] }}</td>
+            <td class="mono">{{ group.hotel_code }}/{{ group.channel }}</td>
+            <td class="mono">{{ group.biz_date }}</td>
+            <td class="num">{{ group.snapshots|length }}</td>
+            <td class="num">v{{ group.version }}</td>
+            <td><span class="tag {{ 'pass' if group.state == 'adopted' else 'candidate' }}">{{ "已采信" if group.state == "adopted" else "整组隔离" }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if not conflicts.groups %}<p class="empty">当前批次没有重复快照冲突。</p>{% endif %}
+    </div>
+  </section>
+  <section class="panel">
+    <h2>裁决说明<span class="meta">只追加 · 版本校验</span></h2>
+    <div class="body">
+      <p class="hint">选择原快照并填写理由后采纳；撤销随时可做，撤销后回到整组隔离。两人同时提交同一版本时，后提交者收到 409，不会被旧状态覆盖。重试带同一请求号不会重复入账。</p>
+      <form class="decision" id="decision-form">
+        <label>裁决人
+          <input type="text" name="actor" id="actor-input" placeholder="如 finance-a" autocomplete="off">
+        </label>
+        <label>理由（至少 4 字）
+          <input type="text" name="reason" id="reason-input" placeholder="如 财务核实 493 行为原报">
+        </label>
+        <div>
+          <button type="button" class="primary" id="adopt-btn" disabled>采纳所选快照</button>
+          <button type="button" class="ghost" id="revoke-btn" disabled>撤销，恢复整组隔离</button>
+        </div>
+      </form>
+      <p class="msg" id="decision-msg"></p>
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>原证据 vs 当前决定<span class="meta" id="detail-meta">未选择</span></h2>
+  <div class="body" id="conflict-detail">
+    <p class="empty">在上方清单点一行，查看该组全部候选快照、当前决定与历次裁决。</p>
+  </div>
+</section>
+
+<script type="application/json" id="conflict-data">{{ conflicts.groups|tojson }}</script>
+<script src="/static/conflicts.js" defer></script>
+{% else %}
+<section class="panel"><div class="body"><p class="empty">还没有批次，先导入样例。</p></div></section>
+{% endif %}
+{% endblock %}

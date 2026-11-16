@@ -62,6 +62,7 @@ def ingest(data: bytes, input_name: str, settings: config.Settings) -> IngestRes
             continue
         row = columns.row_cells(record.cells, mapping)
         row["_line_no"] = record.line_no
+        row["_raw"] = record.raw
         rows.append(row)
     result = IngestResult(
         input_name=input_name,

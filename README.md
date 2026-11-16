@@ -7,6 +7,7 @@
 - **采信**：编码回退（UTF-8 / GB18030）、BOM 剥离、重复表头剔除、严格列数、原始行号保留。
 - **值归一**：千分位、全角数字、单位后缀、空值哨兵三态、带偏移时间统一到 UTC 再落东八区业务日。
 - **质量与隔离**：负值、超售越界、快照时间异常、重复快照冲突各有稳定原因码，隔离行可导出 CSV。
+- **冲突裁定**：重复快照冲突可逐组选原快照并记录理由，采信点带 `source=adjudicated` 参与收入与异常计算；撤销回到整组隔离，历次裁决只追加、不删，原证据与 `Q_DUP_CONFLICT` 永不改写。
 - **异常检测**：工作日 / 休息日分层，滚动 28 个同层点算 median 与 MAD，`|z| ≥ 3.5` 且连续 2 天确认。
 - **归因分解**：LMDI 三因子分解，残差显式；维度份额前 5 组单列，其余合并并吸收尾差。
 - **批次与清单**：`run_id` 由输入 sha256 + 规则版本 + 参数摘要派生，同源重跑直接复用。
@@ -18,7 +19,7 @@
 |---|---|---|
 | M1 指标接入 | `POST /api/import`、`POST /api/import/preview` | 解码回退链、列映射、三态空输入 |
 | M2 日历与归一 | `GET /api/contract`、`POST /api/contract/preview` | 半开日桶、事件时区归一、哨兵三态 |
-| M3 质量隔离 | `GET /api/quarantine`、`GET /api/quarantine.csv` | 重复快照归因、迟到标记、三账 |
+| M3 质量隔离 | `GET /api/quarantine`、`GET /api/quarantine.csv`、`GET /api/conflicts`、`POST /api/conflicts/{group_id}/adopt`、`POST /api/conflicts/{group_id}/revoke` | 重复快照归因、迟到标记、三账、冲突组裁定（版本校验、幂等重试、可撤销） |
 | M4 异常检测 | `GET /api/anomalies` | 同层窗口 median/MAD、连续确认、MAD 为 0 的退路 |
 | M5 归因与批次 | `GET /api/attribution`、`POST /api/attribution/rerun`、`GET /api/batches` | LMDI 三因子、份额守恒、幂等重跑 |
 | M6 报告与导出 | `GET /api/report`、`GET /api/export/{kind}` | 四账、清单、证据行导出 |
@@ -53,15 +54,16 @@ docker compose down -v --remove-orphans
 ## 演示步骤
 
 1. `/` 看四账与原因码，点「仅采信」查看编码与逐行诊断。
-2. `/anomalies` 看水位时间轴与确认点：`H02/ota` 11-17 → 11-18、`H01/member` 11-14 → 11-15；`H03/direct` 11-19 只有候选。
-3. `/attribution` 看三因子与残差，`/drilldown` 看渠道与门店份额。
-4. `/batches` 点「重跑」，批次号不变、行数不变。
-5. `/report` 导出四个文件，逐行带行号与原因码。
-6. `/review` 看复盘卡与敏感性矩阵；在 `/` 用选样例导入 `review_marginal.csv` 后回 `/review`，可以看到翻转的组合与同批异常。
+2. `/conflicts` 看重复快照冲突组：左侧是原报候选快照（仍标 `Q_DUP_CONFLICT`），右侧是当前决定与历次裁决；选一行、填理由后采纳，撤销即恢复整组隔离。
+3. `/anomalies` 看水位时间轴与确认点：`H02/ota` 11-17 → 11-18、`H01/member` 11-14 → 11-15；`H03/direct` 11-19 只有候选。
+4. `/attribution` 看三因子与残差，`/drilldown` 看渠道与门店份额。
+5. `/batches` 点「重跑」，批次号不变、行数不变。
+6. `/report` 导出四个文件，逐行带行号与原因码。
+7. `/review` 看复盘卡与敏感性矩阵；在 `/` 用选样例导入 `review_marginal.csv` 后回 `/review`，可以看到翻转的组合与同批异常。
 
 ## 接口与页面
 
-页面 7 个：`/`、`/anomalies`、`/review`、`/attribution`、`/drilldown`、`/batches`、`/report`；接口清单与失败码见 `docs/API.md`，交互式文档在 `/docs`。
+页面 8 个：`/`、`/conflicts`、`/anomalies`、`/review`、`/attribution`、`/drilldown`、`/batches`、`/report`；接口清单与失败码见 `docs/API.md`，交互式文档在 `/docs`。
 
 ## 目录
 

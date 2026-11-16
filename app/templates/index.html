@@ -25,12 +25,15 @@
 {% if summary %}
 <section class="grid-metrics">
   <div class="metric"><div class="k">读入行</div><div class="v">{{ accounts.rows_read|int }}</div></div>
-  <div class="metric"><div class="k">有效点</div><div class="v">{{ accounts.points_valid|int }}</div></div>
+  <div class="metric"><div class="k">有效点</div><div class="v">{{ accounts.points_valid|int }}{% if adjudication.adjudicated_points %} <small>含裁定 {{ adjudication.adjudicated_points }}</small>{% endif %}</div></div>
   <div class="metric"><div class="k">缺失点</div><div class="v">{{ accounts.points_missing|int }}</div></div>
   <div class="metric"><div class="k">被覆盖</div><div class="v">{{ accounts.rows_superseded|int }}</div></div>
   <div class="metric"><div class="k">隔离行</div><div class="v">{{ accounts.rows_quarantine|int }}</div></div>
   <div class="metric"><div class="k">迟到点</div><div class="v">{{ accounts.late_points|int }}</div></div>
 </section>
+{% if adjudication.adjudicated_points %}
+<p class="hint" style="padding:0 2px">已有 {{ adjudication.adjudicated_points }} 个冲突裁定采信点参与计算（原报 {{ adjudication.reported|money }} + 裁定 {{ adjudication.adjudicated|money }}）；原证据未改写，<a href="/conflicts">去裁定页对照</a>。</p>
+{% endif %}
 
 <div class="grid-2">
   <section class="panel">

@@ -1,6 +1,6 @@
 # 深度登记 anomalyattr（指标异常归因与维度下钻）
 
-- 规模：中型（7 个功能模块 / 7 个页面 / 107 条测试）
+- 规模：中型（7 个功能模块 / 8 个页面 / 127 条测试）
 - 核心规则一：**稳健 z 异常检测**——按「门店 × 渠道」建日序列，取当日之前最近 28 个**同层**历史点（工作日 / 休息日分开，区间左闭右开，不含当日），`z = 0.6745 × (x − 中位数) / MAD`；`|z| ≥ 3.5` 为候选，相邻业务日同向连续 2 天为确认；同层点不足 14 不判；MAD 为 0 时退到平均绝对偏差，仍为 0 则本点不判。
 - 核心规则二：**LMDI 量价分解**——`净收入 = 可售房晚 × 出租率 × 均价`，权重用对数平均，`Δrev = Δ可售 + Δ出租率 + Δ均价 + 残差`；残差显式量化到分；任一侧因子为 0 时整组记 `A_ZERO_BASE` 并计入残差。
 - 核心规则三：**复盘与敏感性**——对每条确认异常重算一次基线：同层窗口先剔节假日点（占三成以上即标 `R_HOLIDAY_THIN`），MAD 为 0 退到平均绝对偏差，两者都为 0 时不做除法、记 `R_NO_DISPERSION`；因子用 LMDI 在事件窗口与其前等长窗口之间分解；再用窗口 21/28/35 × 阈值 2.5/3.5/4.5 扫九个组合，任一组合不再成立就把结论标 `unstable` 并列出翻转组合。
@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | M1 指标接入 | 上传或选样例，看到编码、列映射、逐行诊断 | POST /api/import、POST /api/import/preview、页面 / | `app/modules/m1_ingest/handler.py` `app/modules/m1_ingest/service.py` `app/modules/m1_ingest/reader.py` `app/modules/m1_ingest/decode.py` `app/modules/m1_ingest/columns.py` | `tests/test_ingest.py` |
 | M2 日历与归一 | 查看字段定义、试算单行、确认时区与分层 | GET /api/contract、POST /api/contract/preview | `app/modules/m2_calendar/handler.py` `app/modules/m2_calendar/service.py` `app/modules/m2_calendar/calendar_rules.py` `app/modules/m2_calendar/tz.py` `app/modules/m2_calendar/contract.py` | `tests/test_calendar.py` |
-| M3 质量隔离 | 看原因码分布、导出隔离行、核对三账 | GET /api/quarantine、GET /api/quarantine.csv | `app/modules/m3_quality/handler.py` `app/modules/m3_quality/service.py` `app/modules/m3_quality/rules.py` `app/modules/m3_quality/dupes.py` `app/modules/m3_quality/quarantine.py` | `tests/test_quality.py` |
+| M3 质量隔离 | 看原因码分布、导出隔离行、核对三账；对重复快照冲突组逐组裁决 | GET /api/quarantine、GET /api/quarantine.csv、GET /api/conflicts、POST /api/conflicts/{group_id}/adopt、POST /api/conflicts/{group_id}/revoke、页面 /conflicts | `app/modules/m3_quality/handler.py` `app/modules/m3_quality/service.py` `app/modules/m3_quality/rules.py` `app/modules/m3_quality/dupes.py` `app/modules/m3_quality/quarantine.py` `app/modules/m3_quality/adjudication.py` `app/modules/m3_quality/adjudication_service.py` `app/modules/m3_quality/conflict_handler.py` | `tests/test_quality.py` `tests/test_conflict.py` |
 | M4 异常检测 | 看水位时间轴、确认点与候选点明细 | GET /api/anomalies、GET /api/anomalies/timeline、页面 /anomalies | `app/modules/m4_detect/handler.py` `app/modules/m4_detect/service.py` `app/modules/m4_detect/stratify.py` `app/modules/m4_detect/madz.py` `app/modules/m4_detect/series.py` | `tests/test_detect.py` |
 | M5 归因与批次 | 看三因子分解、维度份额、同源重跑 | GET /api/attribution、POST /api/attribution/rerun、GET /api/batches、GET /api/reconcile、页面 /attribution /drilldown /batches | `app/modules/m5_attrib/handler.py` `app/modules/m5_attrib/service.py` `app/modules/m5_attrib/lmdi.py` `app/modules/m5_attrib/dimension.py` `app/modules/m5_attrib/batches.py` | `tests/test_attrib.py` |
 | M6 报告与导出 | 看运行清单、导出证据文件 | GET /api/report、GET /api/export/{kind}、页面 /report | `app/modules/m6_export/handler.py` `app/modules/m6_export/service.py` `app/modules/m6_export/csv_out.py` `app/modules/m6_export/report_build.py` `app/modules/m6_export/manifest_out.py` | `tests/test_export.py` |
@@ -36,6 +36,10 @@
 | TRAP-24 | 三因子各自四舍五入后合计与总差不符；份额凑不到 1 | 报告里差额和因子差 0.01，份额合计 100.01% | 因子用 40 位精度算，残差显式量化到分；份额尾差由「其他」或最大组吸收 | `app/modules/m5_attrib/lmdi.py`、`app/modules/m5_attrib/dimension.py` | `tests/test_attrib.py::test_lmdi_residual_is_explicit_zero` `tests/test_attrib.py::test_dimension_shares_conserve_to_one` `tests/test_attrib.py::test_zero_total_delta_marks_share_none` |
 | TRAP-27 | 复盘基线剔掉节假日后全等，MAD 与平均绝对偏差都是 0 | `0.6745 × (x − median) / mad` 直接除零，接口 500，或写死一个「无异常」 | 离散度为 0 时不进入除法：`review_z` 返回 `(None, R_NO_DISPERSION)`，卡上标退化、置信降为低 | `app/modules/m7_review/baseline.py` | `tests/test_m7_review.py::test_mad_zero_returns_code_not_division` `tests/test_m7_review.py::test_flat_series_card_flagged_degenerate` |
 | TRAP-28 | 基准组合下确认的事件，把阈值从 3.5 提到 4.5 就消失 | 只报基准组合的结论，把不稳定的判断当稳定的用 | 九个组合各跑一次检测，逐事件记保留/翻转；任一组合不成立就把结论标 unstable 并列出翻转组合 | `app/modules/m7_review/sensitiv.py`、`app/modules/m7_review/service.py` | `tests/test_m7_sensitivity.py::test_flip_marks_unstable_and_lists_combo` `tests/test_m7_sensitivity.py::test_threshold_monotonic_confirmed_points` |
+| TRAP-31 | 冲突组整组隔离后财务核实能定论，但直接改隔离行或覆盖点会把人工决定写成原报事实 | 改原冲突行的值或删 `Q_DUP_CONFLICT`，审计时无法区分「原报」与「人工」 | 原证据按文件 sha256 只读落库；裁决只追加、带版本与理由；采信点标 `source=adjudicated` 叠加到有效点，隔离行与原因码不动 | `app/modules/m3_quality/adjudication.py` `app/modules/m3_quality/adjudication_service.py` | `tests/test_conflict.py::test_adopt_does_not_rewrite_quarantine_or_conflict_rows` `tests/test_conflict.py::test_adopted_snapshot_joins_income_and_split_is_explicit` |
+| TRAP-32 | 两名财务同时裁决同一冲突组，后提交者基于旧状态覆盖新决定 | 用 `UPDATE ... WHERE group_id=?` 盲写，后到的覆盖先到的，历史只剩一条 | 每次裁决带 `expected_version`，在同一事务里校验为组内下一版本；`(group_id, version)` 唯一索引兜底，冲突返回 409 | `app/store.py::append_decision` `app/modules/m3_quality/adjudication_service.py::decide` | `tests/test_conflict.py::test_stale_version_rejected_after_someone_else_adopted` `tests/test_conflict.py::test_concurrent_store_commits_allow_exactly_one` |
+| TRAP-33 | 裁决请求超时后重试，或撤销后用同一请求重放 | 每次都新增一条裁决，版本虚增、收入重复计入 | `request_id` 按组唯一，重放命中已有决定直接返回（`reused=true`），不再写入 | `app/modules/m3_quality/adjudication_service.py::decide` `app/store.py` 唯一索引 | `tests/test_conflict.py::test_replayed_request_is_not_booked_twice` `tests/test_conflict.py::test_revocation_replay_after_state_change_is_idempotent` |
+| TRAP-34 | 重导同一文件或同源重跑后，已有裁决丢失 | 重导按 run 重建隔离，顺手把裁决链清掉 | 裁决与证据都以文件 sha256（及业务键）为身份，与 run_id 解耦；重导只替换证据快照，不碰决定 | `app/modules/m3_quality/adjudication_service.py::persist_evidence` `app/store.py` | `tests/test_conflict.py::test_reimport_same_file_preserves_decision` `tests/test_conflict.py::test_rerun_same_file_preserves_decision` |
 
 ## 对账规则
 
@@ -45,12 +49,13 @@
 - 分解账：净收入差 = 可售房晚差 + 出租率差 + 均价差 + 残差
 - 四账在 /api/reconcile、/api/report、/batches 页面与 `/api/export/manifest.json` 导出中逐条给出，差额非 0 显式为「不平」。
 - 复盘账：确认事件数 = 复盘卡数；每张卡在九个敏感性组合里记一次「保留」或「翻转」，保留 + 翻转 = 9 × 卡数。
+- 裁定账：有效点 = 原报有效点 + 裁定采信点；收入 = 原报采信 + 裁定采信。原始隔离行与 `Q_DUP_CONFLICT` 不因裁定增减，行账始终按原报口径对平。
 
 ## 反例与不变量
 
 - 反例（朴素实现会挂）：`tests/test_quality.py::test_naive_last_write_wins_keeps_conflict`（按行序覆盖把冲突藏掉）、`tests/test_ingest.py::test_naive_utf8_decode_would_fail`、`tests/test_calendar.py::test_naive_float_parse_would_raise`、`tests/test_m7_review.py::test_mad_zero_returns_code_not_division`（朴素除法直接抛 DivisionByZero）。
 - 边界：`tests/test_ingest.py::test_full_last_line_without_newline_is_accepted`（末行无换行但列齐不算截断）、`tests/test_quality.py::test_late_window_boundary_exactly_three_days`（晚 3 天在窗内、第 4 天才超窗）、`tests/test_detect.py::test_baseline_minimum_boundary_thirteen_points`（13 点不判、14 点才判）、`tests/test_attrib.py::test_zero_total_delta_marks_share_none`（总差为 0 不除零）。
-- 不变量：`tests/test_m7_sensitivity.py::test_threshold_monotonic_confirmed_points`（阈值单调：确认点随阈值只减不增）、`tests/test_m7_sensitivity.py::test_combos_account_for_every_event`（守恒：保留 + 翻转 = 9 × 卡数）、`tests/test_attrib.py::test_rerun_is_idempotent`（幂等）、`tests/test_quality.py::test_rows_identity_holds` `tests/test_quality.py::test_points_identity_holds` `tests/test_quality.py::test_revenue_identity_holds`（守恒）、`tests/test_quality.py::test_shuffled_input_gives_same_accounts`（顺序无关）。
+- 不变量：`tests/test_m7_sensitivity.py::test_threshold_monotonic_confirmed_points`（阈值单调：确认点随阈值只减不增）、`tests/test_m7_sensitivity.py::test_combos_account_for_every_event`（守恒：保留 + 翻转 = 9 × 卡数）、`tests/test_attrib.py::test_rerun_is_idempotent`（幂等）、`tests/test_quality.py::test_rows_identity_holds` `tests/test_quality.py::test_points_identity_holds` `tests/test_quality.py::test_revenue_identity_holds`（守恒）、`tests/test_quality.py::test_shuffled_input_gives_same_accounts`（顺序无关）、`tests/test_conflict.py::test_concurrent_store_commits_allow_exactly_one`（并发下同一版本只落一条）、`tests/test_conflict.py::test_adopt_does_not_rewrite_quarantine_or_conflict_rows`（原证据不变）、`tests/test_conflict.py::test_replayed_request_is_not_booked_twice`（重试不重复入账）。
 - 端到端：`tests/test_e2e.py::test_full_pipeline_end_to_end`。
 
 ## 已知不覆盖

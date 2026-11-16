@@ -22,6 +22,7 @@ class QualityResult:
     quarantine: list[dict] = field(default_factory=list)
     superseded: list[dict] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
+    conflict_rows: list = field(default_factory=list)
     late_marks: list[dict] = field(default_factory=list)
     accounts: dict = field(default_factory=dict)
     grid: dict = field(default_factory=dict)
@@ -71,6 +72,7 @@ def evaluate(coerced: list[CoercedRow], reject_rows: list[dict],
         points=[_point_dict(row) for row in resolved.winners],
         superseded=resolved.superseded,
         conflicts=resolved.conflicts,
+        conflict_rows=resolved.conflict_rows,
         late_marks=late_marks,
         watermark=watermark_date.isoformat() if watermark_date else "",
     )

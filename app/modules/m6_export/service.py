@@ -36,7 +36,7 @@ def export_text(settings, store, kind: str, run_id: str | None = None) -> tuple[
         raise errors.BadInput("未知导出类型：" + kind, code="E_BAD_EXPORT")
     run = _run(store, run_id)
     if kind == "points.csv":
-        points = store.load_points(run["run_id"])
+        points = attrib_service.load_view(store, run["run_id"])
         return csv_out.points_csv(points), "text/csv; charset=utf-8", f"points-{run['run_id']}.csv"
     if kind == "anomalies.csv":
         points = attrib_service.load_view(store, run["run_id"])
@@ -47,5 +47,13 @@ def export_text(settings, store, kind: str, run_id: str | None = None) -> tuple[
         result = attrib_service.attribution(settings, store, run["run_id"], "hotel_code", 7, 7)
         return (csv_out.attribution_csv(result), "text/csv; charset=utf-8",
                 f"attribution-{run['run_id']}.csv")
-    return (manifest_out.manifest_json(run), "application/json",
-            f"manifest-{run['run_id']}.json")
+    from app.modules.m3_quality import adjudication_service
+
+    groups = adjudication_service.groups_for_run(store, run)
+    body = manifest_out.manifest_json_with_adjudication(
+        run,
+        adjudication_service.accounts_view(store, run),
+        adjudication_service.groups_payload(store, run)["revenue"],
+        [group.as_dict() for group in groups],
+    )
+    return (body, "application/json", f"manifest-{run['run_id']}.json")

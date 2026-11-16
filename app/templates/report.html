@@ -30,6 +30,10 @@
           <tr><td>被覆盖</td><td class="num">{{ report.accounts.rows_superseded|int }}</td></tr>
           <tr><td>隔离行</td><td class="num">{{ report.accounts.rows_quarantine|int }}</td></tr>
           <tr><td>净收入合计</td><td class="num">{{ report.accounts.revenue_accepted|money }}</td></tr>
+          {% if report.accounts.revenue_adjudicated and report.accounts.revenue_adjudicated != "0.00" %}
+          <tr><td>原报 / 裁定</td><td class="num">{{ report.accounts.revenue_accepted_reported|money }} + {{ report.accounts.revenue_adjudicated|money }}</td></tr>
+          <tr><td>裁定采信点</td><td class="num">{{ report.adjudication.adjudicated_points|default(0) }}</td></tr>
+          {% endif %}
         </tbody>
       </table>
     </div>

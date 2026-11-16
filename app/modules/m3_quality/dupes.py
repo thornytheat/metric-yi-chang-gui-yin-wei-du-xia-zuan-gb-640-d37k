@@ -20,6 +20,7 @@ class ResolveResult:
     winners: list[CoercedRow] = field(default_factory=list)
     superseded: list[dict] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
+    conflict_rows: list[CoercedRow] = field(default_factory=list)
 
     def winner_keys(self) -> set:
         return {row.key() for row in self.winners}
@@ -68,6 +69,7 @@ def resolve(rows: list[CoercedRow]) -> ResolveResult:
         conflict = any(len({_values(row) for row in bucket}) > 1 for bucket in stamps.values())
         if conflict:
             detail = "同键同一快照时间给出不同数值，整键隔离，不猜哪条为准"
+            result.conflict_rows.extend(group)
             for row in group:
                 result.conflicts.append(_snapshot_entry(row, None, "Q_DUP_CONFLICT", detail))
             continue

@@ -11,6 +11,7 @@ from decimal import Decimal
 from app import config, manifest, reasons
 from app.modules.m1_ingest import service as ingest_service
 from app.modules.m2_calendar import service as coerce_service, tz
+from app.modules.m3_quality import adjudication_service
 from app.modules.m3_quality import service as quality_service
 from app.modules.m4_detect import service as detect_service
 from app.modules.m5_attrib import batches, dimension, lmdi
@@ -96,6 +97,9 @@ def run_batch(settings: config.Settings, store, data: bytes, input_name: str) ->
     store.save_run(run_manifest.as_dict(), key, summary)
     store.replace_points(run_id, points)
     store.replace_quarantine(run_id, quality.quarantine)
+    # 冲突证据以文件 sha256 为键落库：重导同一文件不换组、不抹决定
+    adjudication_service.persist_evidence(
+        store, digest, adjudication_service.evidence_payload(quality, digest))
     return summary
 
 
@@ -111,7 +115,14 @@ def _points_view(points: list[dict]) -> list[dict]:
 
 
 def load_view(store, run_id: str) -> list[dict]:
-    return _points_view(store.load_points(run_id))
+    """归因 / 检测 / 复盘统一从这里取数：原报有效点 + 裁定采信点。
+
+    每个点带 ``source``，合计时可拆出「原报采信」与「裁定采信」两段。
+    """
+    run = store.get_run(run_id)
+    if run is None:
+        return []
+    return _points_view(adjudication_service.effective_points(store, run))
 
 
 def windows(watermark: str, cur_days: int, base_days: int) -> dict:
@@ -205,7 +216,7 @@ def reconcile(settings: config.Settings, store, run_id: str | None) -> dict:
     if run is None:
         return {}
     summary = run["summary"]
-    accounts = summary.get("accounts", {})
+    accounts = adjudication_service.accounts_view(store, run)
     checks = quality_service.account_checks(accounts)
     decomposition = {
         "name": "分解账",
@@ -225,4 +236,5 @@ def reconcile(settings: config.Settings, store, run_id: str | None) -> dict:
         "reason_counts": summary.get("reason_counts", []),
         "unknown_reason_codes": unknown,
         "identity_ok": all(item["ok"] for item in checks),
+        "adjudication": adjudication_service.groups_payload(store, run)["revenue"],
     }

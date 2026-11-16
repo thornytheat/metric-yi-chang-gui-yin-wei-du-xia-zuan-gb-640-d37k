@@ -9,7 +9,7 @@ import io
 
 POINT_COLUMNS = ("biz_date", "hotel_code", "hotel_name", "channel", "stratum",
                  "rooms_available", "rooms_sold", "adr", "revenue_net",
-                 "late_flag", "source_line", "updated_utc")
+                 "late_flag", "source_line", "updated_utc", "source")
 ANOMALY_COLUMNS = ("biz_date", "hotel_code", "channel", "stratum", "value", "median",
                    "dispersion", "z", "method", "status", "direction", "baseline_points")
 ATTRIB_COLUMNS = ("key", "label", "rev_base", "rev_cur", "delta", "share",

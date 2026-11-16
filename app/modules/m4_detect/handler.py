@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, Request
 
 from app import errors
 from app.modules.m4_detect import service
+from app.modules.m5_attrib import service as attrib_service
 from app.web import state
 
 router = APIRouter()
@@ -15,7 +16,7 @@ def _detect(request: Request) -> tuple[dict, dict]:
     run = app_state.current_run()
     if run is None:
         raise errors.NotFound("还没有运行记录", code="E_NO_RUN")
-    points = app_state.store.load_points(run["run_id"])
+    points = attrib_service.load_view(app_state.store, run["run_id"])
     if not points:
         raise errors.BadInput("当前批次没有有效指标点", code="E_NO_POINTS")
     return run, service.detect(points, app_state.settings)

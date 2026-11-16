@@ -10,11 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from app import config, errors
 from app.modules.m1_ingest import handler as ingest_handler
 from app.modules.m2_calendar import handler as calendar_handler
+from app.modules.m3_quality import conflict_handler as conflict_handler
 from app.modules.m3_quality import handler as quality_handler
 from app.modules.m4_detect import handler as detect_handler
 from app.modules.m5_attrib import handler as attrib_handler
 from app.modules.m6_export import handler as export_handler
 from app.modules.m7_review import handler as review_handler
+from app import store as store_module
 from app.store import Store
 from app.web import AppState, pages
 
@@ -36,9 +38,18 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     async def value_error_handler(_: Request, exc: ValueError) -> JSONResponse:  # noqa: ANN202
         return JSONResponse(status_code=400, content={"error": "E_VALUE", "message": str(exc)})
 
+    @app.exception_handler(store_module.DecisionVersionConflict)
+    async def version_conflict_handler(_: Request, exc) -> JSONResponse:  # noqa: ANN001, ANN202
+        return JSONResponse(status_code=409, content={
+            "error": "E_DECISION_STALE",
+            "message": exc.message,
+            "current_version": exc.current,
+        })
+
     app.include_router(ingest_handler.router)
     app.include_router(calendar_handler.router)
     app.include_router(quality_handler.router)
+    app.include_router(conflict_handler.router)
     app.include_router(detect_handler.router)
     app.include_router(attrib_handler.router)
     app.include_router(export_handler.router)

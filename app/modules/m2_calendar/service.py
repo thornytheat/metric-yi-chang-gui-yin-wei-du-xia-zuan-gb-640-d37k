@@ -34,6 +34,7 @@ class CoercedRow:
     line_no: int
     late_flag: bool = False
     out_of_window: bool = False
+    raw: str = ""
 
     def key(self) -> tuple:
         return (self.hotel_code, self.channel, self.biz_date)
@@ -162,6 +163,7 @@ def coerce_row(raw: dict, settings: config.Settings) -> tuple[CoercedRow | None,
         snapshot_local=snapshot_local,
         late_days=lateness,
         line_no=line_no,
+        raw=raw.get("_raw", ""),
     ), []
 
 
